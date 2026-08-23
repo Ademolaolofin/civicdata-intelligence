@@ -1,0 +1,21 @@
+{
+  "project": "CivicData Intelligence",
+  "version": "0.1",
+  "sources": [
+    {
+      "organisation": "Ministry of Housing, Communities and Local Government",
+      "dataset": "Local Government Outcomes: Statistical Neighbours model",
+      "publication": "Local Outcomes Framework",
+      "publication_date": "2026-07-01",
+      "sheet": "Statistical Neighbours",
+      "records": 317,
+      "neighbours_per_authority": 15,
+      "licence": "Open Government Licence v3.0",
+      "source_url": "https://www.gov.uk/government/publications/local-outcomes-framework/local-government-outcomes-statistical-neighbours-model",
+      "processing": {
+        "parser": "src/civicdata/ingestion/parse_neighbours.py",
+        "quality_engine": "src/civicdata/quality/quality_report.py"
+      }
+    }
+  ]
+}
