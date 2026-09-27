@@ -35,6 +35,64 @@
         "inspection": "src/civicdata/ingestion/inspect_deprivation.py",
         "geography_validation": "src/civicdata/quality/validate_geography.py"
       }
+    },
+    {
+      "organisation": "Ministry of Housing, Communities and Local Government",
+      "dataset": "English Indices of Deprivation 2025 - File 10",
+      "publication": "English Indices of Deprivation 2025",
+      "source_version": "corrected v2 version published November 2025",
+      "geography": {
+        "primary": "Local Authority District (2024)",
+        "level": "lower-tier and unitary authorities"
+      },
+      "records": 296,
+      "sheets": [
+        "IMD",
+        "Income",
+        "Employment",
+        "Education",
+        "Health",
+        "Crime",
+        "Barriers",
+        "Living",
+        "IDACI",
+        "IDAOPI"
+      ],
+      "coverage": {
+        "overall_index": "Index of Multiple Deprivation",
+        "domains": [
+          "Income",
+          "Employment",
+          "Education, Skills and Training",
+          "Health Deprivation and Disability",
+          "Crime",
+          "Barriers to Housing and Services",
+          "Living Environment"
+        ],
+        "supplementary_indices": [
+          "Income Deprivation Affecting Children Index",
+          "Income Deprivation Affecting Older People Index"
+        ]
+      },
+      "licence": "Open Government Licence v3.0",
+      "source_url": "https://www.gov.uk/government/statistics/english-indices-of-deprivation-2025",
+      "processing": {
+        "parser": "src/civicdata/ingestion/parse_iod_lad_summaries.py",
+        "output": "data/processed/iod_2025_lad_official_summaries.csv",
+        "geography_harmonisation": {
+          "description": "Source LAD codes are preserved alongside CivicData authority codes used for integration with the MHCLG Statistical Neighbours dataset.",
+          "mapped_authorities": {
+            "E08000016": "E08000038",
+            "E08000019": "E08000039"
+          }
+        },
+        "validation": {
+          "authority_count": 296,
+          "duplicate_authority_codes": 0,
+          "missing_authority_codes": 0,
+          "file7_reconciliation": "296 of 296 authorities matched the official File 10 proportion of LSOAs in the most deprived 10% nationally, with no material differences."
+        }
+      }
     }
   ]
 }
