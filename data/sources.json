@@ -16,6 +16,25 @@
         "parser": "src/civicdata/ingestion/parse_neighbours.py",
         "quality_engine": "src/civicdata/quality/quality_report.py"
       }
+    },
+    {
+      "organisation": "Ministry of Housing, Communities and Local Government",
+      "dataset": "English Indices of Deprivation 2025 - File 7",
+      "publication": "English Indices of Deprivation 2025",
+      "source_version": "corrected version published November 2025",
+      "geography": {
+        "primary": "Lower Layer Super Output Area (2021)",
+        "local_authority": "Local Authority District (2024)"
+      },
+      "records": 33755,
+      "columns": 56,
+      "licence": "Open Government Licence v3.0",
+      "source_url": "https://www.gov.uk/government/statistics/english-indices-of-deprivation-2025",
+      "processing": {
+        "downloader": "src/civicdata/ingestion/download_deprivation.py",
+        "inspection": "src/civicdata/ingestion/inspect_deprivation.py",
+        "geography_validation": "src/civicdata/quality/validate_geography.py"
+      }
     }
   ]
 }
