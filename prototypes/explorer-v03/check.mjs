@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { execFileSync } from "node:child_process";
 import { gzipSync } from "node:zlib";
 
 const read = path => readFileSync(`dist/${path}`, "utf8");
@@ -34,8 +36,10 @@ for (const metric of release.metrics) {
 }
 const defaultMetric = release.metrics[0];
 assert.ok(workspace.includes(defaultMetric.definition));
-assert.ok(workspace.includes(defaultMetric.periods.at(-1).value.toFixed(2)));
-assert.ok(profile.includes(defaultMetric.periods.at(-1).value.toFixed(2)));
+const latest = defaultMetric.periods.at(-1).value;
+const latestDisplay = latest === null ? "Unavailable" : latest.toFixed(2);
+assert.ok(workspace.includes(latestDisplay));
+assert.ok(profile.includes(latestDisplay));
 for (const html of [home, profile, workspace]) {
   assert.match(html, /<html lang="en"/);
   assert.match(html, /href="#main"/);
@@ -45,3 +49,26 @@ for (const html of [home, profile, workspace]) {
 const bytes = gzipSync(read("workspace.js")).length;
 assert.ok(bytes < 250 * 1024);
 console.log(`Three static routes verified; 1 authority, 2 metrics, 4 years, 2 models; workspace JS ${bytes} gzip bytes`);
+
+// Exercise the same React renderer with both values without modifying the real release.
+const fixture = mkdtempSync(resolve(".build/observation-render-"));
+try {
+  const variant = structuredClone(release);
+  variant.metrics[0].periods.at(-1).value = 0;
+  variant.metrics[0].periods.at(-2).value = null;
+  variant.metrics[1].periods.at(-1).value = null;
+  mkdirSync(join(fixture, ".build"), { recursive: true });
+  mkdirSync(join(fixture, "src"), { recursive: true });
+  writeFileSync(join(fixture, ".build/release.json"), JSON.stringify(variant));
+  copyFileSync("src/site.css", join(fixture, "src/site.css"));
+  execFileSync(process.execPath, [resolve(".build/renderer/prerender.js")], { cwd: fixture });
+  const profileVariant = readFileSync(join(fixture, "dist/authorities/E06000001/index.html"), "utf8");
+  const workspaceVariant = readFileSync(join(fixture, "dist/workspace/index.html"), "utf8");
+  assert.match(profileVariant, /class="value">0\.00 <span>Per cent<\/span>/);
+  assert.match(profileVariant, /class="value">Unavailable\s*<\/p>/);
+  assert.match(workspaceVariant, /class="value">0\.00 <span>Per cent<\/span>/);
+  assert.match(workspaceVariant, /<span>2023\/24<\/span><strong>Unavailable<\/strong>/);
+  console.log("Static profile and workspace distinguish observed zero from unavailable data");
+} finally {
+  rmSync(fixture, { recursive: true });
+}

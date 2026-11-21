@@ -5,6 +5,8 @@ import json
 from pathlib import Path
 import sys
 
+import pandas as pd
+
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
@@ -17,6 +19,11 @@ from civicdata.ingestion.build_dfe_children_neighbours import SNAPSHOT_NAME, rea
 def export():
     authority = "E06000001"
     authorities, mhclg, deprivation, outcomes, dataset = explorer.load_data(explorer.DATA)
+    # Explorer's comparison expects empty strings for unavailable source values.
+    # Normalise pandas missing scalars and numeric inputs before using that contract.
+    outcomes = outcomes.assign(
+        value=outcomes["value"].map(lambda value: "" if pd.isna(value) else str(value))
+    )
     dfe_release, dfe = explorer.children_comparator(
         read_snapshot(explorer.DATA / SNAPSHOT_NAME)
     )
@@ -52,7 +59,7 @@ def export():
                 }
             periods.append({
                 "label": observation.period,
-                "value": float(observation.value) if observation.value else None,
+                "value": None if observation.value == "" else float(observation.value),
                 "geography": observation.source_geography,
                 "comparators": comparators,
             })
