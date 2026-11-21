@@ -127,14 +127,30 @@ def test_dfe_selection_without_local_snapshot(explorer_data):
     assert "2026 broad comparator set" not in html
 
 
-def test_district_level_observations_do_not_qualify_for_dfe_model(explorer_data, published):
+@pytest.mark.parametrize(("target_level", "peer_level"), [
+    ("Local authority district", "Local authority district"),
+    ("Local authority district", "Local authority"),
+    ("Local authority", "Local authority district"),
+])
+def test_district_level_observations_do_not_qualify_for_dfe_model(
+    explorer_data, published, target_level, peer_level
+):
     children = APP["children_comparator"](published)
     authorities, mhclg, deprivation, outcomes, dataset = explorer_data
     changed = outcomes.copy()
-    changed.loc[:, "source_geography"] = "Local authority district"
+    changed.loc[:, "source_geography"] = peer_level
+    changed.loc[changed["authority_code"].eq("E06000001"), "source_geography"] = target_level
+    _, rows, comparable, available = APP["comparison"](
+        children[1], changed, "E06000001", "19346", "2024/25", children=True
+    )
+    assert (comparable, available) == (0, 10)
+    assert all(row[5] == "Different source geography or series metadata" for row in rows)
     data = authorities, mhclg, deprivation, changed, dataset
     query = {"comparator": ["dfe"]}
     html = APP["render"](data, query, children)
     assert "10 of 10" in html
-    assert "outside the DfE model geography level" in html
+    if target_level == "Local authority district":
+        assert "outside the DfE model geography level" in html
+    else:
+        assert "0 qualify for comparison" in html
     assert "Different source geography or series metadata" in html

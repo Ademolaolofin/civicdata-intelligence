@@ -147,7 +147,10 @@ def comparison(peers, outcomes, authority, metric, period, *, children=False):
                 status = "Selected authority value is unavailable"
             elif (
                 record.source_geography != target.source_geography
-                or (children and record.source_geography != "Local authority")
+                or (children and (
+                    target.source_geography != "Local authority"
+                    or record.source_geography != "Local authority"
+                ))
                 or record.unit != target.unit
                 or record.source_dataset_version != target.source_dataset_version
                 or record.period_type != target.period_type
