@@ -9,11 +9,8 @@ sets. The homepage limits authority selection to Hartlepool.
 
 ## Build and run
 
-This prototype depends on the v0.2 comparator implementation in
-[PR #4](https://github.com/Ademolaolofin/civicdata-intelligence/pull/4).
-Until that PR lands, build in a checkout that includes the reviewed v0.2
-head `36d3dff` and these prototype files. The draft review diff intentionally
-contains only the prototype.
+Build from `feature/lof-integration` at `141ebc4` or a later revision that
+contains both the v0.2 comparator and v0.3 prototype.
 
 Use Python 3 with the repository requirements installed and the four
 local snapshots from the [Explorer guide](../../docs/explorer.md).
@@ -78,3 +75,23 @@ This review shares source code only. Before a public preview, confirm
 the application code licence, inventory third-party notices for bundled
 dependencies, and verify redistribution terms and attribution for every
 field in the generated release.
+
+## Optional local postcode and evidence pilot
+
+The original authority profile remains available. To enable the postcode
+route, fetch the fixed public-venue fixtures once and export with the pilot
+flag from this directory:
+
+```powershell
+..\..\.venv\Scripts\python.exe pilot_release.py --fetch
+..\..\.venv\Scripts\python.exe export_release.py --pilot
+pnpm run build
+pnpm run check
+pnpm run check:pilot
+..\..\.venv\Scripts\python.exe -m http.server 8765 --bind 127.0.0.1 --directory dist
+```
+
+Open `/explore/` and try the Civic Centre postcode `TS24 8AY`.
+The fixed lookup and question matching run in the browser. The workspace
+link carries the statistical area and selected evidence. See the
+[pilot evaluation and source notes](../../docs/hartlepool-pilot-evaluation.md).

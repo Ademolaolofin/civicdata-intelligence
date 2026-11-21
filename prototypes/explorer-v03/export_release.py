@@ -1,6 +1,7 @@
 """Export the single-authority proof-of-concept release from validated snapshots."""
 
 from hashlib import sha256
+from argparse import ArgumentParser
 import json
 from pathlib import Path
 import sys
@@ -100,8 +101,19 @@ def export():
 
 
 if __name__ == "__main__":
+    parser = ArgumentParser(description=__doc__)
+    parser.add_argument("--pilot", action="store_true", help="Include the validated public-venue postcode fixture")
+    args = parser.parse_args()
     path = HERE / ".build/release.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     release = export()
+    if args.pilot:
+        from pilot_release import build
+
+        pilot = build()
+        release["pilot"] = pilot
+        release["id"] = sha256(
+            (release["id"] + pilot["lookup"]["sha256"] + pilot["deprivation"]["sha256"]).encode()
+        ).hexdigest()[:16]
     path.write_text(json.dumps(release, ensure_ascii=False, allow_nan=False, indent=2) + "\n", encoding="utf-8")
     print(f"Exported release {release['id']} for {release['authority']['code']}")

@@ -6,7 +6,8 @@
   "packageManager": "pnpm@11.25.0",
   "scripts": {
     "build": "tsc --noEmit && vite build && vite build --ssr src/prerender.tsx --outDir .build/renderer && node .build/renderer/prerender.js",
-    "check": "node check.mjs"
+    "check": "node check.mjs",
+    "check:pilot": "vite build --ssr src/pilot.ts --outDir .build/pilot-test && node check-pilot.mjs"
   },
   "dependencies": { "react": "19.2.4", "react-dom": "19.2.4" },
   "devDependencies": {

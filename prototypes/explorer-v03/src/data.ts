@@ -33,6 +33,15 @@ export type Release = {
   models: Record<Model, { label: string; release: string; geography: string; url: string }>;
   deprivation: { score: number; rank: number; sourceCode: string; release: string; geography: string; url: string };
   metrics: Metric[];
+  pilot?: Pilot;
+};
+
+export type Pilot = {
+  lookup: { version: string; url: string; sha256: string };
+  deprivation: { version: string; url: string; sha256: string };
+  retrievedAt: string;
+  postcodes: Record<string, { area: string | null; terminated: number | null }>;
+  areas: Record<string, { name: string; rank: number; decile: number }>;
 };
 
 export function display(value: number | null) {

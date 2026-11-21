@@ -1,10 +1,12 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { createRoot } from "react-dom/client";
 import type { Model, Release } from "./data";
-import { WorkspaceResults } from "./views";
+import { NeighbourhoodEvidence, WorkspaceResults } from "./views";
 
 function Workspace({ release }: { release: Release }) {
   const params = new URLSearchParams(window.location.search);
+  const requestedArea = params.get("area");
+  const area = requestedArea && release.pilot?.areas[requestedArea] ? requestedArea : null;
   const firstMetric = release.metrics.find(metric => metric.id === params.get("metric")) ?? release.metrics[0];
   const [metric, setMetric] = useState(firstMetric);
   const [year, setYear] = useState(firstMetric.periods.find(period => period.label === params.get("period"))?.label
@@ -16,6 +18,12 @@ function Workspace({ release }: { release: Release }) {
   const [announcement, setAnnouncement] = useState("");
   const period = metric.periods.find(item => item.label === year)!;
   const draftPeriods = release.metrics.find(item => item.id === draftMetric)!.periods;
+  useEffect(() => {
+    const anchor = window.location.hash.slice(1);
+    if (["neighbourhood-evidence", "indicator-evidence", "peers"].includes(anchor)) {
+      document.getElementById(anchor)?.focus();
+    }
+  }, []);
 
   function apply(metricId: string, periodLabel: string, modelId: Model) {
     const nextMetric = release.metrics.find(item => item.id === metricId) ?? release.metrics[0];
@@ -30,6 +38,7 @@ function Workspace({ release }: { release: Release }) {
     const url = new URL(window.location.href);
     url.search = new URLSearchParams({
       authority: release.authority.code, metric: nextMetric.id, period: nextPeriod.label, model: modelId,
+      ...(area ? { area } : {}),
     }).toString();
     window.history.replaceState(null, "", url);
   }
@@ -40,6 +49,7 @@ function Workspace({ release }: { release: Release }) {
   }
 
   return <>
+    {area && release.pilot && <NeighbourhoodEvidence pilot={release.pilot} area={area}/>}
     <form className="filters panel" onSubmit={submit}>
       <label>Authority<select defaultValue={release.authority.code}>
         <option value={release.authority.code}>{release.authority.name}</option>

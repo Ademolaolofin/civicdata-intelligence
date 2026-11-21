@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { createRequire } from "node:module";
+import { readFileSync } from "node:fs";
 
 const [python, playwrightPath, browserPath] = process.argv.slice(2);
 assert.ok(python && playwrightPath && browserPath,
@@ -44,7 +45,7 @@ try {
   workspace.on("pageerror", error => errors.push(error.message));
   await workspace.goto(`${base}workspace/?metric=27666&period=2023%2F24&model=dfe`);
   await workspace.getByRole("button", { name: "Apply filters" }).waitFor();
-  assert.equal(await workspace.getByLabel("Indicator").inputValue(), "27666");
+  assert.equal(await workspace.getByRole("combobox", { name: /^Indicator/ }).inputValue(), "27666");
   assert.equal(await workspace.getByLabel("Reporting period").inputValue(), "2023/24");
   assert.equal(await workspace.locator("tbody tr").count(), 10);
   assert.equal(await workspace.evaluate(() =>
@@ -57,6 +58,33 @@ try {
   assert.equal(new URL(workspace.url()).searchParams.get("model"), "mhclg");
   await workspace.setViewportSize({ width: 1280, height: 900 });
   await workspace.screenshot({ path: ".build/workspace.png", fullPage: true });
+  const release = JSON.parse(readFileSync("dist/data/release.json", "utf8"));
+  if (release.pilot) {
+    await workspace.setViewportSize({ width: 360, height: 800 });
+    await workspace.goto(`${base}explore/`);
+    await workspace.getByLabel("Public test postcode").fill("TS24 0XZ");
+    await workspace.getByRole("button", { name: "Find area" }).click();
+    await workspace.getByText(/retired in 2025-08/).waitFor();
+    assert.equal(await workspace.getByRole("heading", { name: "Neighbourhood deprivation" }).count(), 0);
+    await workspace.getByLabel("Public test postcode").fill("ts248ay");
+    await workspace.getByRole("button", { name: "Find area" }).click();
+    await workspace.getByRole("heading", { name: "Neighbourhood deprivation" }).waitFor();
+    await workspace.getByLabel("Question", { exact: true }).fill("What is GLD?");
+    await workspace.getByRole("button", { name: "Explain" }).click();
+    await workspace.getByText(/local authority was/).waitFor();
+    await workspace.getByLabel("Question", { exact: true }).fill("How has it changed over time?");
+    await workspace.getByRole("button", { name: "Explain" }).click();
+    await workspace.getByText(/without establishing a cause/).waitFor();
+    await workspace.getByRole("link", { name: "Inspect supporting evidence" }).click();
+    await workspace.getByRole("heading", { name: "Neighbourhood deprivation" }).waitFor();
+    await workspace.getByRole("button", { name: "Apply filters" }).waitFor();
+    await workspace.waitForFunction(() => document.activeElement?.id === "indicator-evidence");
+    assert.equal(new URL(workspace.url()).searchParams.get("area"), "E01011974");
+    assert.equal(new URL(workspace.url()).searchParams.get("metric"), "19346");
+    assert.ok(!workspace.url().includes("TS24"));
+    assert.equal(await workspace.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    console.log("Pilot browser checks passed for retired/current lookup, follow-up and evidence handoff");
+  }
   assert.deepEqual(errors, []);
   await interactive.close();
   console.log("Static host browser checks passed for no-JS links, keyboard entry, direct filters, both peer models and mobile reflow");
