@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
-import { display, type Metric, type Model, type Period, type Release } from "./data";
+import { display, type Metric, type Model, type Period, type Pilot, type Release } from "./data";
 
-type Page = "home" | "profile" | "workspace";
+type Page = "home" | "profile" | "workspace" | "explore";
 
 export function Document({ page, base, release, children }: {
   page: Page; base: string; release: Release; children: ReactNode;
@@ -11,7 +11,7 @@ export function Document({ page, base, release, children }: {
     profile: `${base}authorities/${release.authority.code}/`,
     workspace: `${base}workspace/`,
   };
-  const title = { home: "Explore your local area", profile: release.authority.name, workspace: "Analytics workspace" };
+  const title = { home: "Explore your local area", profile: release.authority.name, workspace: "Analytics workspace", explore: "Explore the Area" };
   return <html lang="en">
     <head>
       <meta charSet="utf-8"/>
@@ -25,6 +25,7 @@ export function Document({ page, base, release, children }: {
         <div className="wrap nav">
           <a className="brand" href={routes.home}>Civic<span>Data</span><small> Intelligence</small></a>
           <nav aria-label="Main navigation">
+            {release.pilot && <a href={`${base}explore/`} aria-current={page === "explore" ? "page" : undefined}>Explore by postcode</a>}
             <a href={routes.profile} aria-current={page === "profile" ? "page" : undefined}>Explore an area</a>
             <a href={routes.workspace} aria-current={page === "workspace" ? "page" : undefined}>Analytics workspace</a>
           </nav>
@@ -35,7 +36,7 @@ export function Document({ page, base, release, children }: {
         <span>CivicData Intelligence · Local proof of concept</span>
         <a href={`${base}data/release.json`}>View data release {release.id}</a>
       </div></footer>
-      {page === "workspace" && <script type="module" src={`${base}workspace.js`}/>}
+      {(page === "workspace" || page === "explore") && <script type="module" src={`${base}${page}.js`}/>}
     </body>
   </html>;
 }
@@ -47,6 +48,7 @@ export function Home({ release }: { release: Release }) {
         <div>
           <h1>Understand your local area</h1>
           <p>Explore deprivation, early-years development and the councils that share similar characteristics.</p>
+          {release.pilot && <p><a className="button" href="./explore/">Explore by postcode</a></p>}
           <a className="button secondary" href="./workspace/">Open analytics workspace</a>
         </div>
         <form className="finder panel" action={`./authorities/${release.authority.code}/`} method="get">
@@ -77,6 +79,17 @@ export function Indicator({ metric, period }: { metric: Metric; period: Period }
     <p className="meta">{period.label} · {period.geography}</p>
     <p>{metric.definition}</p>
   </article>;
+}
+
+export function NeighbourhoodEvidence({ pilot, area }: { pilot: Pilot; area: string }) {
+  const neighbourhood = pilot.areas[area];
+  return <section className="panel" id="neighbourhood-evidence" tabIndex={-1} aria-labelledby="neighbourhood-heading">
+    <h2 id="neighbourhood-heading">Neighbourhood deprivation</h2>
+    <p>{neighbourhood.name} · {area} · 2021 statistical neighbourhood</p>
+    <p>Index of Multiple Deprivation 2025 · decile {neighbourhood.decile} · rank {neighbourhood.rank.toLocaleString("en-GB")} of 32,844 English neighbourhoods</p>
+    <p>Decile 1 is the most deprived tenth. This relative measure describes the statistical neighbourhood.</p>
+    <p><a href={pilot.deprivation.url}>MHCLG deprivation source</a> · <a href={pilot.lookup.url}>ONS postcode lookup, {pilot.lookup.version}</a></p>
+  </section>;
 }
 
 function EyfsSource({ release }: { release: Release }) {
@@ -115,7 +128,7 @@ export function WorkspaceResults({ release, metric, period, model, onPeriod }: {
   const selected = period.comparators[model];
   const context = release.models[model];
   return <>
-    <div className="cards">
+    <div className="cards" id="indicator-evidence" tabIndex={-1} aria-label="Selected indicator evidence">
       <Indicator metric={metric} period={period}/>
       <section className="panel" aria-label="Trend">
         <h2>Trend</h2>
@@ -129,8 +142,8 @@ export function WorkspaceResults({ release, metric, period, model, onPeriod }: {
       </section>
     </div>
     <EyfsSource release={release}/>
-    <section className="panel section-item" aria-labelledby="peers">
-      <h2 id="peers">Statistical neighbours</h2>
+    <section className="panel section-item" id="peers" tabIndex={-1} aria-labelledby="peers-heading">
+      <h2 id="peers-heading">Statistical neighbours</h2>
       <p><a href={context.url}>{context.label}</a> · {context.release} · {context.geography}</p>
       {model === "dfe" && <p>The May 2025 model provides context for earlier EYFS years.</p>}
       <p><strong>{selected.available} of {selected.peers.length}</strong> peers have numeric values. {selected.comparable} qualify for comparison by geography and series metadata.</p>

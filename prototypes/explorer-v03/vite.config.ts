@@ -3,8 +3,8 @@ import { defineConfig } from "vite";
 export default defineConfig(({ isSsrBuild }) => ({
   build: isSsrBuild ? {} : {
     rollupOptions: {
-      input: "src/workspace.tsx",
-      output: { entryFileNames: "workspace.js" },
+      input: { workspace: "src/workspace.tsx", explore: "src/explore.tsx" },
+      output: { entryFileNames: "[name].js" },
     },
   },
 }));

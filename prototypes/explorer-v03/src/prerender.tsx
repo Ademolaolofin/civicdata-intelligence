@@ -27,6 +27,16 @@ const routes = [
       </div>
     </div>
   </Document>],
+  ...(release.pilot ? [["explore/index.html", <Document page="explore" base="../" release={release}>
+    <div className="wrap section">
+      <h1>Explore the Area</h1>
+      <p>Hartlepool postcode and evidence pilot</p>
+      <div id="explore" data-release="../data/release.json">
+        <p>Postcode lookup requires JavaScript. The Hartlepool profile remains available below.</p>
+      </div>
+      <p><a href="../authorities/E06000001/">Open Hartlepool profile</a></p>
+    </div>
+  </Document>] as const] : []),
 ] as const;
 
 for (const [path, content] of routes) {

@@ -46,9 +46,17 @@ for (const html of [home, profile, workspace]) {
   assert.match(html, /aria-label="Main navigation"/);
   assert.ok(html.includes(release.id));
 }
-const bytes = gzipSync(read("workspace.js")).length;
+const shared = existsSync("dist/assets") ? readdirSync("dist/assets").filter(name => name.endsWith(".js")) : [];
+const bytes = ["workspace.js", ...shared.map(name => `assets/${name}`)].reduce(
+  (total, path) => total + gzipSync(read(path)).length, 0,
+);
 assert.ok(bytes < 250 * 1024);
 console.log(`Three static routes verified; 1 authority, 2 metrics, 4 years, 2 models; workspace JS ${bytes} gzip bytes`);
+if (release.pilot) {
+  assert.match(home, /href="\.\/explore\/"/);
+  assert.match(read("explore/index.html"), /data-release="\.\.\/data\/release\.json"/);
+  assert.ok(existsSync("dist/explore.js"));
+}
 
 // Exercise the same React renderer with both values without modifying the real release.
 const fixture = mkdtempSync(resolve(".build/observation-render-"));
