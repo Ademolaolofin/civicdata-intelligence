@@ -5,6 +5,7 @@ from html import escape
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from math import isfinite
 from pathlib import Path
+import re
 from urllib.parse import parse_qs, urlsplit
 
 import pandas as pd
@@ -17,6 +18,12 @@ METRICS = {
     "19346": ("Good level of development", "Share of assessed children achieving a good level of development at age 5."),
     "27666": ("Free school meals development gap", "Good level of development rate for children ineligible for free school meals minus the rate for eligible children."),
 }
+EYFS_UNITS = {"19346": "Per cent", "27666": "Percentage point"}
+EYFS_GEOGRAPHIES = {"Local authority", "Local authority district"}
+EYFS_PROVENANCE = [
+    "source_provider", "source_system", "source_dataset", "source_dataset_id",
+    "source_dataset_version", "source_url",
+]
 PROFILE = {
     "imd_average_score": "IMD average score",
     "imd_rank_of_average_score": "Rank of IMD average score (1 most deprived)",
@@ -40,9 +47,36 @@ def read_snapshot(directory, filename, columns, key):
     missing = set(columns) - set(frame.columns)
     if missing:
         raise ValueError(f"{filename}: missing columns {', '.join(sorted(missing))}")
-    if frame.empty or frame[key].eq("").any().any() or frame.duplicated(key).any():
+    if frame.empty or frame[key].apply(lambda column: column.str.strip().eq("")).any().any() or frame.duplicated(key).any():
         raise ValueError(f"{filename}: expected nonempty, unique keys {', '.join(key)}")
     return frame
+
+
+def validate_eyfs(outcomes):
+    if set(outcomes["lg_inform_metric_id"]) != set(METRICS):
+        raise ValueError("Expected both validated DfE EYFS metrics")
+    if not outcomes["source_geography"].isin(EYFS_GEOGRAPHIES).all():
+        raise ValueError("Invalid DfE EYFS source_geography")
+    if not outcomes["period_type"].eq("Academic year").all():
+        raise ValueError("Expected DfE EYFS period_type Academic year")
+    if not outcomes["unit"].eq(outcomes["lg_inform_metric_id"].map(EYFS_UNITS)).all():
+        raise ValueError("Invalid DfE EYFS unit for metric")
+    for label, identifier in outcomes[["period", "time_period"]].drop_duplicates().itertuples(index=False, name=None):
+        if not re.fullmatch(r"[0-9]{4}/[0-9]{2}", label):
+            raise ValueError("Invalid DfE EYFS academic period label")
+        start, end = label.split("/")
+        if end != f"{(int(start) + 1) % 100:02d}" or identifier != start + end:
+            raise ValueError("Invalid DfE EYFS academic period identifier")
+    provenance = outcomes[EYFS_PROVENANCE].drop_duplicates()
+    for column in EYFS_PROVENANCE:
+        if provenance[column].str.strip().eq("").any():
+            raise ValueError(f"Missing DfE EYFS provenance: {column}")
+    if len(provenance) != 1:
+        raise ValueError("Expected one consistent DfE EYFS dataset provenance")
+    location = urlsplit(provenance["source_url"].item())
+    if location.scheme != "https" or not location.hostname or location.username is not None:
+        raise ValueError("Expected a public HTTPS DfE EYFS source_url")
+    return provenance.iloc[0]
 
 
 def load_data(directory):
@@ -69,8 +103,8 @@ def load_data(directory):
         ["authority_code", "source_authority_code", *PROFILE], ["authority_code"]
     ).set_index("authority_code")
     outcomes = read_snapshot(directory, "lof_dfe_eyfs_observations.csv",
-        ["lg_inform_metric_id", "authority_code", "period", "period_type", "unit", "value",
-         "source_geography", "source_provider", "source_dataset", "source_dataset_version", "source_url"],
+        ["lg_inform_metric_id", "authority_code", "period", "time_period", "period_type", "unit",
+         "value", "source_geography", *EYFS_PROVENANCE],
         ["lg_inform_metric_id", "authority_code", "period"])
     for frame, columns in ((deprivation, PROFILE), (outcomes, ["value"])):
         for column in columns:
@@ -81,9 +115,7 @@ def load_data(directory):
                 valid = False
             if not valid:
                 raise ValueError(f"Expected finite numeric values or blanks in {column}")
-    if set(outcomes["lg_inform_metric_id"]) != set(METRICS):
-        raise ValueError("Expected both validated DfE EYFS metrics")
-    return authorities, peers, deprivation, outcomes
+    return authorities, peers, deprivation, outcomes, validate_eyfs(outcomes)
 
 
 def comparison(peers, outcomes, authority, metric, period):
@@ -94,16 +126,20 @@ def comparison(peers, outcomes, authority, metric, period):
     ranked = peers.loc[peers["local_authority_code"].eq(authority)].sort_values("rank")
     rows = []
     comparable = 0
+    available = 0
     for peer in ranked.itertuples(index=False):
         value, geography, status = "—", "—", "No source row"
         if peer.neighbour_code in series.index:
             record = series.loc[peer.neighbour_code]
             geography = record.source_geography
             value = display_value(record.value)
+            available += bool(record.value)
             if not record.value:
                 status = "Unavailable in DfE output"
             elif target is None:
                 status = "Selected authority has no source row"
+            elif not target.value:
+                status = "Selected authority value is unavailable"
             elif (
                 record.source_geography != target.source_geography
                 or record.unit != target.unit
@@ -115,7 +151,7 @@ def comparison(peers, outcomes, authority, metric, period):
                 status = "Matching geography level"
                 comparable += 1
         rows.append((peer.rank, peer.neighbour_name, peer.neighbour_code, value, geography, status))
-    return target, rows, comparable
+    return target, rows, comparable, available
 
 
 def display_value(value):
@@ -140,7 +176,7 @@ def select(name, label, options, selected):
 
 
 def render(data, query):
-    authorities, peers, deprivation, outcomes = data
+    authorities, peers, deprivation, outcomes, dataset = data
     default = "E06000001" if "E06000001" in authorities else authorities.index[0]
     authority = query.get("authority", [default])[0]
     metric = query.get("metric", ["19346"])[0]
@@ -153,7 +189,7 @@ def render(data, query):
     if period not in periods:
         raise ValueError("Unknown reporting period for this metric")
     title, definition = METRICS[metric]
-    target, peer_rows, comparable = comparison(peers, outcomes, authority, metric, period)
+    target, peer_rows, comparable, available = comparison(peers, outcomes, authority, metric, period)
     history = outcomes.loc[
         outcomes["authority_code"].eq(authority) & outcomes["lg_inform_metric_id"].eq(metric)
     ].set_index("period")
@@ -162,12 +198,18 @@ def render(data, query):
         if year in history.index else (year, "No source row", "—")
         for year in periods
     ]
-    source = target if target is not None else outcomes.loc[
-        outcomes["lg_inform_metric_id"].eq(metric) & outcomes["period"].eq(period)
-    ].iloc[0]
     selected = "No source row" if target is None else display_value(target.value)
-    source_url = source.source_url if urlsplit(source.source_url).scheme == "https" else ""
     source_geography = "—" if target is None else target.source_geography
+    unit = EYFS_UNITS[metric]
+    provenance_note = (
+        "No observation provenance for this authority and year."
+        if target is None else "Selected observation is from the DfE dataset below."
+    )
+    comparison_note = (
+        f"{comparable} qualify for comparison by geography level and series metadata."
+        if target is not None and target.value else
+        "Comparison unavailable because the selected authority has no numeric observation."
+    )
     profile = "<p>No matching deprivation record for this authority code.</p>"
     if authority in deprivation.index:
         row = deprivation.loc[authority]
@@ -194,20 +236,21 @@ def render(data, query):
 <button type="submit">Apply filters</button></form>
 <div class="grid">
 <section><h2>{title}</h2><p>{definition}</p>
-<p class="value">{selected} <small>{escape(source.unit) if target is not None and target.value else ""}</small></p>
+<p class="value">{selected} <small>{unit if target is not None and target.value else ""}</small></p>
 <p>{escape(period)} · {escape(source_geography)}</p>
 {html_table(["Academic year", "Value", "Source geography"], outcome_rows)}
-<p><a href="{escape(source_url)}">{escape(source.source_provider)} · {escape(source.source_dataset)}</a>
- · release {escape(source.source_dataset_version)} · {escape(source.unit)}</p>
+<p>{provenance_note}</p>
+<p>Dataset metadata: <a href="{escape(dataset.source_url)}">{escape(dataset.source_provider)} · {escape(dataset.source_dataset)}</a>
+ · release {escape(dataset.source_dataset_version)} · {unit}</p>
 <p>Unavailable means the DfE output contains a row with a blank value. It does not retain a reason for suppression or missingness.</p>
 </section>
 <section><h2>Deprivation profile</h2><p><a href="{DEPRIVATION}">English Indices of Deprivation 2025 · File 10</a></p>{profile}</section>
 </div>
 <section><h2>Statistical neighbours</h2>
 <p><a href="{NEIGHBOURS}">MHCLG Local Outcomes Framework · 2026 broad comparator set</a></p>
-<p><strong>{comparable} of {len(peer_rows)}</strong> published peers have a numeric value with matching geography level and series metadata.
+<p><strong>{available} of {len(peer_rows)}</strong> published peers have a numeric value. {comparison_note}
 Displayed peer values retain their source geography. Use caution when interpreting geography or boundary changes.</p>
-{html_table(["Published rank", "Authority", "Code", f"Value ({source.unit})", "Source geography", "Comparison status"], peer_rows)}
+{html_table(["Published rank", "Authority", "Code", f"Value ({unit})", "Source geography", "Comparison status"], peer_rows)}
 <dl><dt>Children’s Services statistical neighbours</dt><dd>Unavailable in the local snapshots.</dd>
 <dt>Adult Social Care statistical neighbours</dt><dd>Unavailable in the local snapshots.</dd></dl>
 </section></main></body></html>"""
