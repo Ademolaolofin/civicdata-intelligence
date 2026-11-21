@@ -1,4 +1,4 @@
-# CivicData Explorer v0.1
+# CivicData Explorer v0.2
 
 Atlas — Lead Development Agent, CivicData Intelligence
 
@@ -33,7 +33,7 @@ From the repository root in PowerShell:
 ```
 
 Open [http://127.0.0.1:8765/](http://127.0.0.1:8765/), choose an authority,
-measure and academic year, then select **Apply filters**. Use Ctrl+C to
+measure, academic year and comparator, then select **Apply filters**. Use Ctrl+C to
 stop the server. If the port is in use, add `--port 8766`.
 
 Python's standard library serves the HTML on loopback and pandas reads the
@@ -77,10 +77,10 @@ period type, unit and dataset version. A matching geography level does not estab
 equivalence. The app displays mixed-geography values with a status and
 does not compute a pooled statistic.
 
-Children's Services and Adult Social Care comparator sets have separate
-availability labels. The local MHCLG list is a broad contextual model.
-The workbook supplies no service-specific relationship lists, so those
-sets are unavailable in the app. [MHCLG comparator methodology](https://www.gov.uk/government/publications/local-outcomes-framework/local-government-outcomes-statistical-neighbours-model)
+The broad MHCLG Local Outcomes Framework model is the default.
+Children’s Services can be selected independently when the optional DfE
+snapshot is present. Adult Social Care remains unavailable.
+[MHCLG comparator methodology](https://www.gov.uk/government/publications/local-outcomes-framework/local-government-outcomes-statistical-neighbours-model)
 
 The deprivation profile uses the File 10 values and source LAD code,
 including the documented code mapping where applicable. A missing
@@ -91,6 +91,56 @@ dataset metadata is shown separately from observation provenance.
 The loader checks geography levels, metric-specific units, academic year
 labels and IDs, and one consistent DfE dataset provenance record. LG Inform
 observation access remains unverified.
+
+## DfE Children’s Services comparator
+
+DfE published the rebuilt model on 28 May 2025. The workbook identifies it
+as v1 and uses April 2023 English upper-tier geography. DfE used regression
+and correlation screening and iterative weighting to select and weight
+23 background variables, mainly from Census 2021. It ranked peers by
+weighted Euclidean distance on standardised inputs. CivicData reads the
+published results directly. [DfE release and update note](https://www.gov.uk/government/publications/local-authority-interactive-tool-lait) ·
+[DfE technical report](https://assets.publishing.service.gov.uk/media/682e32faa599d03a16bff3d8/Children_s_services_statistical_neighbour_benchmarking_model_-_technical_report.pdf)
+
+Save the [official workbook](https://assets.publishing.service.gov.uk/media/682dd813e9440506ee95390e/Children_s_services_statistical_neighbour_benchmarking_tool.xlsx)
+as `data/raw/dfe/childrens_services_statistical_neighbours_2025_05.xlsx`.
+Then run the builder and start or restart Explorer:
+
+```powershell
+.\.venv\Scripts\python.exe src/civicdata/ingestion/build_dfe_children_neighbours.py
+.\.venv\Scripts\python.exe src/civicdata/explorer.py
+```
+
+The builder pins the workbook SHA-256
+`8ede025998c03ae4aff25b5db8b3cc1a85887e2acef3b42f9109c9dc4b78a89a`.
+It validates `ModelLong` against `ModelWide` and `LALookup`, and writes
+`data/processed/dfe_children_neighbours_2025_05_v1.json`. The artifact
+records publication date, version, geography vintage, source URLs,
+checksum, ONS and DfE lookup identifiers, and all **1,530 directed
+relationships for 153 authorities**. It preserves raw names, codes,
+ranks and proximity labels, including original spacing. Proximity is
+normalised only for validation across the two workbook tables.
+The raw and processed files remain ignored by Git. With a custom
+Explorer `--data-dir`, use the same path as the builder’s `--output-dir`.
+
+Exactly 151 DfE codes match the current MHCLG authority universe.
+The two exceptions are DfE’s pre-change Barnsley `E08000016` and
+Sheffield `E08000019`. ONS identifies `E08000038` and `E08000039` as
+their successors following a boundary change. Explorer retains the
+original codes and ranks and withholds outcome joins for those
+relationships. Selecting either successor under the DfE model shows
+the geography difference. An authority absent from the DfE model for
+other reasons shows an out-of-coverage state. [ONS Barnsley](https://www.ons.gov.uk/explore-local-statistics/areas/E08000038-barnsley) ·
+[ONS Sheffield](https://www.ons.gov.uk/explore-local-statistics/areas/E08000039-sheffield)
+
+DfE comparisons require exact codes and local authority-level EYFS
+observations. The interface distinguishes peer availability and actual
+comparability, including absent rows, blank target or peer values,
+boundary differences and geography-level mismatches. The May 2025 peer
+set is applied as context to the selected EYFS year, including earlier
+years. Exact code and level matching cannot prove historic boundary
+equivalence. The model supplies context for Children’s Services, and
+does not define the EYFS measures or their source geography.
 
 ## Verification and next iteration
 
@@ -107,7 +157,8 @@ GLD example has 15 of 15 peers with numeric values and matching series
 metadata. Sunderland is its published rank 1. Isles of Scilly shows
 available FSM gap peer values and no valid comparison for its blank target.
 
-The next iteration is to ingest a versioned, official service-specific
-relationship snapshot, starting with the DfE Children's Services model,
-and add a separate comparison view once its authority coverage and ranks
-are verified.
+The DfE tests cover the pinned workbook, all published relationships
+and lookup codes, invalid artifacts, comparator selection, and coverage
+and geography states. Workbook-backed tests skip with a reason when
+the official local workbook is absent. The next step is independent
+review of the v0.2 comparison and boundary handling.
