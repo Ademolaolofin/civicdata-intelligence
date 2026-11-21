@@ -14,6 +14,9 @@ import pandas as pd
 DATA = Path(__file__).resolve().parents[2] / "data" / "processed"
 NEIGHBOURS = "https://www.gov.uk/government/publications/local-outcomes-framework/local-government-outcomes-statistical-neighbours-model"
 DEPRIVATION = "https://www.gov.uk/government/statistics/english-indices-of-deprivation-2025"
+COMPARATORS = {"mhclg": "MHCLG · broad Local Outcomes Framework", "dfe": "DfE · Children’s Services"}
+# Known ONS successions, for boundary notices only. Never use these to join observations.
+DFE_BOUNDARY_SUCCESSORS = {"E08000016": "E08000038", "E08000019": "E08000039"}
 METRICS = {
     "19346": ("Good level of development", "Share of assessed children achieving a good level of development at age 5."),
     "27666": ("Free school meals development gap", "Good level of development rate for children ineligible for free school meals minus the rate for eligible children."),
@@ -118,7 +121,7 @@ def load_data(directory):
     return authorities, peers, deprivation, outcomes, validate_eyfs(outcomes)
 
 
-def comparison(peers, outcomes, authority, metric, period):
+def comparison(peers, outcomes, authority, metric, period, *, children=False):
     series = outcomes.loc[
         outcomes["lg_inform_metric_id"].eq(metric) & outcomes["period"].eq(period)
     ].set_index("authority_code")
@@ -129,7 +132,9 @@ def comparison(peers, outcomes, authority, metric, period):
     available = 0
     for peer in ranked.itertuples(index=False):
         value, geography, status = "—", "—", "No source row"
-        if peer.neighbour_code in series.index:
+        if children and peer.neighbour_code in DFE_BOUNDARY_SUCCESSORS:
+            status = "Boundary change: DfE source code retained; outcome join withheld"
+        elif peer.neighbour_code in series.index:
             record = series.loc[peer.neighbour_code]
             geography = record.source_geography
             value = display_value(record.value)
@@ -142,6 +147,7 @@ def comparison(peers, outcomes, authority, metric, period):
                 status = "Selected authority value is unavailable"
             elif (
                 record.source_geography != target.source_geography
+                or (children and record.source_geography != "Local authority")
                 or record.unit != target.unit
                 or record.source_dataset_version != target.source_dataset_version
                 or record.period_type != target.period_type
@@ -150,7 +156,8 @@ def comparison(peers, outcomes, authority, metric, period):
             else:
                 status = "Matching geography level"
                 comparable += 1
-        rows.append((peer.rank, peer.neighbour_name, peer.neighbour_code, value, geography, status))
+        row = (peer.rank, peer.neighbour_name, peer.neighbour_code, value, geography, status)
+        rows.append((*row, peer.proximity) if children else row)
     return target, rows, comparable, available
 
 
@@ -175,13 +182,23 @@ def select(name, label, options, selected):
     return f'<label>{label}<select name="{name}">{choices}</select></label>'
 
 
-def render(data, query):
+def children_comparator(snapshot):
+    return snapshot["release"], pd.DataFrame(snapshot["relationships"]).rename(columns={
+        "la_code": "local_authority_code", "SN_code": "neighbour_code",
+        "SN_name": "neighbour_name", "SN": "rank", "SN_prox": "proximity",
+    })
+
+
+def render(data, query, children=None):
     authorities, peers, deprivation, outcomes, dataset = data
     default = "E06000001" if "E06000001" in authorities else authorities.index[0]
     authority = query.get("authority", [default])[0]
     metric = query.get("metric", ["19346"])[0]
+    comparator = query.get("comparator", ["mhclg"])[0]
     if authority not in authorities or metric not in METRICS:
         raise ValueError("Unknown authority or metric")
+    if comparator not in COMPARATORS:
+        raise ValueError("Unknown comparator")
     periods = sorted(outcomes.loc[outcomes["lg_inform_metric_id"].eq(metric), "period"].unique(), reverse=True)
     if not periods:
         raise ValueError("No periods available for this metric")
@@ -189,10 +206,10 @@ def render(data, query):
     if period not in periods:
         raise ValueError("Unknown reporting period for this metric")
     title, definition = METRICS[metric]
-    target, peer_rows, comparable, available = comparison(peers, outcomes, authority, metric, period)
     history = outcomes.loc[
         outcomes["authority_code"].eq(authority) & outcomes["lg_inform_metric_id"].eq(metric)
     ].set_index("period")
+    target = history.loc[period] if period in history.index else None
     outcome_rows = [
         (year, display_value(history.at[year, "value"]), history.at[year, "source_geography"])
         if year in history.index else (year, "No source row", "—")
@@ -205,10 +222,8 @@ def render(data, query):
         "No observation provenance for this authority and year."
         if target is None else "Selected observation is from the DfE dataset below."
     )
-    comparison_note = (
-        f"{comparable} qualify for comparison by geography level and series metadata."
-        if target is not None and target.value else
-        "Comparison unavailable because the selected authority has no numeric observation."
+    comparison_html = render_comparator(
+        peers, outcomes, authority, metric, period, comparator, children
     )
     profile = "<p>No matching deprivation record for this authority code.</p>"
     if authority in deprivation.index:
@@ -226,13 +241,14 @@ def render(data, query):
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>CivicData Explorer</title><style>{STYLE}</style></head><body>
-<header><div class="wrap mast"><strong>CivicData Explorer</strong><span>Local Outcomes Framework · v0.1</span></div></header>
+<header><div class="wrap mast"><strong>CivicData Explorer</strong><span>Local Outcomes Framework · v0.2</span></div></header>
 <main class="wrap">
 <h1>{escape(authorities[authority])}</h1><p class="sub">{escape(authority)} · English local authority</p>
 <form method="get">
 {select("authority", "Authority", ((code, f"{name} ({code})") for code, name in authorities.items()), authority)}
 {select("metric", "EYFS measure", ((key, item[0]) for key, item in METRICS.items()), metric)}
 {select("period", "Academic year", ((year, year) for year in periods), period)}
+{select("comparator", "Comparator", COMPARATORS.items(), comparator)}
 <button type="submit">Apply filters</button></form>
 <div class="grid">
 <section><h2>{title}</h2><p>{definition}</p>
@@ -247,13 +263,52 @@ def render(data, query):
 <section><h2>Deprivation profile</h2><p><a href="{DEPRIVATION}">English Indices of Deprivation 2025 · File 10</a></p>{profile}</section>
 </div>
 <section><h2>Statistical neighbours</h2>
-<p><a href="{NEIGHBOURS}">MHCLG Local Outcomes Framework · 2026 broad comparator set</a></p>
-<p><strong>{available} of {len(peer_rows)}</strong> published peers have a numeric value. {comparison_note}
-Displayed peer values retain their source geography. Use caution when interpreting geography or boundary changes.</p>
-{html_table(["Published rank", "Authority", "Code", f"Value ({unit})", "Source geography", "Comparison status"], peer_rows)}
-<dl><dt>Children’s Services statistical neighbours</dt><dd>Unavailable in the local snapshots.</dd>
-<dt>Adult Social Care statistical neighbours</dt><dd>Unavailable in the local snapshots.</dd></dl>
+{comparison_html}
+<dl><dt>Adult Social Care statistical neighbours</dt><dd>Unavailable in the local snapshots.</dd></dl>
 </section></main></body></html>"""
+
+
+def render_comparator(peers, outcomes, authority, metric, period, comparator, children):
+    use_children = comparator == "dfe"
+    heading = f'<p><a href="{NEIGHBOURS}">MHCLG Local Outcomes Framework · 2026 broad comparator set</a></p>'
+    if use_children:
+        if children is None:
+            return "<p>DfE Children’s Services model snapshot is unavailable locally.</p>"
+        release, peers = children
+        heading = (
+            f'<p><a href="{escape(release["release_url"])}">DfE Children’s Services statistical neighbours</a>'
+            f' · {escape(release["workbook_version"])} · published {escape(release["publication_date"])}'
+            f' · {escape(release["geography_vintage"])}</p>'
+            "<p>The May 2025 model is applied to the selected EYFS year for context, "
+            "including years before the model was published.</p>"
+        )
+        if authority in DFE_BOUNDARY_SUCCESSORS.values():
+            source_code = next(code for code, successor in DFE_BOUNDARY_SUCCESSORS.items() if successor == authority)
+            return heading + (
+                f"<p>Unresolved geography difference: the DfE model covers pre-change code {source_code}. "
+                "Comparison is unavailable for the selected successor geography.</p>"
+            )
+        if not peers["local_authority_code"].eq(authority).any():
+            return heading + "<p>This authority is outside DfE Children’s Services comparator coverage.</p>"
+    elif children is None:
+        heading += "<p>Children’s Services statistical neighbours are unavailable in the local snapshots.</p>"
+    target, peer_rows, comparable, available = comparison(
+        peers, outcomes, authority, metric, period, children=use_children
+    )
+    if target is None or not target.value:
+        note = "Comparison unavailable because the selected authority has no numeric observation."
+    elif use_children and target.source_geography != "Local authority":
+        note = "Comparison unavailable because the selected observation is outside the DfE model geography level."
+    else:
+        note = f"{comparable} qualify for comparison by geography level and series metadata."
+    headers = ["Published rank", "Authority", "Code", f"Value ({EYFS_UNITS[metric]})", "Source geography", "Comparison status"]
+    if use_children:
+        headers.append("Published proximity")
+    return heading + (
+        f"<p><strong>{available} of {len(peer_rows)}</strong> published peers have a numeric value. {note} "
+        "Displayed peer values retain their source geography. Matching codes and geography levels do not establish boundary equivalence.</p>"
+        + html_table(headers, peer_rows)
+    )
 
 
 STYLE = """
@@ -277,12 +332,21 @@ a{color:#075985}dt{font-weight:650}dd{margin:0 0 .6rem}
 
 
 def main():
+    if __package__:
+        from .ingestion.build_dfe_children_neighbours import SNAPSHOT_NAME, read_snapshot as read_children
+    else:
+        from ingestion.build_dfe_children_neighbours import SNAPSHOT_NAME, read_snapshot as read_children
+
     parser = ArgumentParser(description=__doc__)
     parser.add_argument("--data-dir", type=Path, default=DATA, help="Directory containing the processed CSVs")
     parser.add_argument("--port", type=int, default=8765)
     args = parser.parse_args()
     try:
         data = load_data(args.data_dir)
+        try:
+            children = children_comparator(read_children(args.data_dir / SNAPSHOT_NAME))
+        except FileNotFoundError:
+            children = None
     except ValueError as exc:
         parser.error(str(exc))
 
@@ -293,7 +357,7 @@ def main():
                 self.send_error(404)
                 return
             try:
-                body = render(data, parse_qs(url.query, keep_blank_values=True)).encode("utf-8")
+                body = render(data, parse_qs(url.query, keep_blank_values=True), children).encode("utf-8")
             except ValueError as exc:
                 self.send_error(400, str(exc))
                 return
