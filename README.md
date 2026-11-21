@@ -59,6 +59,13 @@ Early development: v0.1
 
 The initial development phase focuses on building the data ingestion and data quality infrastructure before developing the public application.
 
+## CivicData Explorer v0.1
+
+Run `.\.venv\Scripts\python.exe src/civicdata/explorer.py` from the repository
+root and open [CivicData Explorer on localhost](http://127.0.0.1:8765/).
+The [Explorer guide](docs/explorer.md) lists the required snapshots, source
+coverage and comparison rules.
+
 ## Licence
 
 To be determined.
